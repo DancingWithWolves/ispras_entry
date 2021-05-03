@@ -4,24 +4,65 @@ import logging
 import sys
 import multiprocessing
 
+max_buf_size = 2048
+
 def run_udp_server(host, port):
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind((host, port))
-    print("The server is ready to receive")
+    logging.info("Socket binded")
 
     while True:
-        _, (cl_host, cl_port) = server_socket.recvfrom(2048)
-        print(cl_host + ":" + str(cl_port))
-        server_socket.sendto((cl_host + ":" + str(cl_port)).encode('utf-8') , (cl_host, cl_port))
+        _, (cl_host, cl_port) = server_socket.recvfrom(max_buf_size)
+        message = (cl_host + ":" + str(cl_port)).encode('utf-8')
+        logging.info("There is a new connection with " + message.decode("utf-8"))
+        server_socket.sendto(message, (cl_host, cl_port))
+        logging.info("Sended message <host:port> to " + message.decode("utf-8"))
+        logging.info("Closed connetion with " + message.decode("utf-8"))
+
+def run_tcp_server(host, port):
+    server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    server_socket.bind((host, port))
+    logging.info("Socket binded")
+
+    server_socket.listen(1)
+    while 1:
+        connection_socket, (cl_host, cl_port) = server_socket.accept()
+        message = (cl_host + ":" + str(cl_port)).encode('utf-8')
+        logging.info("There is a new connection with " + message.decode("utf-8"))
+        connection_socket.send(message)
+        logging.info("Sended message <host:port> to " + message.decode("utf-8"))
+        connection_socket.close()
+        logging.info("Closed connection with" + message.decode("utf-8"))
 
 def run_udp_client(host, port):
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    logging.info("Socket created")
 
-    client_socket.sendto(b"UwU", (host, port))
-    modified_message, _ = client_socket.recvfrom(2048)
-
-    logging.info(modified_message)
+    client_socket.sendto(b"", (host, port))
+    logging.info("Sended empty message, socket binded")
+    recieved_message, _ = client_socket.recvfrom(max_buf_size)
+    logging.info("Recieved message" + recieved_message.decode("utf-8"))
+    
+    print(recieved_message)
     client_socket.close()
+    logging.info("Connection closed")
+
+        
+def run_tcp_client(host, port):
+    client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    logging.info("Socket created")
+
+    client_socket.connect((host,port))
+    logging.info("Connected to the server")
+    
+    client_socket.send(b"")
+
+    recieved_message = client_socket.recv(max_buf_size)
+    logging.info("Recieved message" + recieved_message.decode("utf-8"))
+    print(recieved_message)
+
+    client_socket.close()
+    logging.info("Connection closed")
 
 
 if __name__ == '__main__':
@@ -52,25 +93,37 @@ if __name__ == '__main__':
         logging.basicConfig(stream=sys.stdout,
                             encoding='utf-8', level=logging.DEBUG)
 
-    if args["u"] == 1:
-        logging.info("Nice UDP!")
-    else:
-        logging.info("Awesome TCP!")
+    
 
     if args["s"]:
-        logging.info("Wow I am server!")
+        logging.debug("Wow I am server!")
 
-        p = multiprocessing.Process(
+        if args["u"]:
+            logging.debug("Nice UDP!")
+            p = multiprocessing.Process(
             target=run_udp_server, name="Foo", args=(args["host"], int(args["port"])))
-        p.start()
-        p.join(10)
+        else:
+            logging.info("Awesome TCP!")
+            p = multiprocessing.Process(
+            target=run_tcp_server, name="Foo", args=(args["host"], int(args["port"])))
 
-        if p.is_alive():
-            logging.warning("OwO nobody came to a party(((((")
-
-            p.terminate()
-            p.join()
 
     else:
-        logging.info("OwO I am client!")
-        run_udp_client(args["host"], int(args["port"]))
+        logging.debug("O_o I am client!")
+
+        if args["u"]:
+            logging.debug("Nice UDP!")
+            p = multiprocessing.Process(
+            target=run_udp_client, name="Foo", args=(args["host"], int(args["port"])))
+        else:
+            logging.debug("Awesome TCP!")
+            p = multiprocessing.Process(
+            target=run_tcp_client, name="Foo", args=(args["host"], int(args["port"])))
+    
+    p.start()
+    p.join(10)
+    if p.is_alive():
+        logging.debug("OwO mom calls to bed, see you guys(((((")
+
+        p.terminate()
+        p.join()
