@@ -4,11 +4,11 @@ import socket
 import argparse
 import logging
 import sys
-import multiprocessing
 import signal
-from functools import partial
 
 MAX_BUF_SIZE = 2048
+is_term_ = False
+await_ = False 
 
 
 def run_udp_server(host, port):
@@ -30,13 +30,16 @@ def run_udp_server(host, port):
 
 def run_tcp_server(host, port):
     """Runs TCP server that returns host:port to any client"""
+    global is_term_, await_
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((host, port))
     logging.info("Socket binded")
 
     server_socket.listen(1)
-    while 1:
+    while not is_term_:
+        await_ = True
         connection_socket, (cl_host, cl_port) = server_socket.accept()
+        await_ = False
         message = (cl_host + ":" + str(cl_port)).encode('utf-8')
         logging.info("There is a new connection with %s",
                      message.decode("utf-8"))
@@ -80,13 +83,18 @@ def run_tcp_client(host, port):
     logging.info("Connection closed")
 
 
-def server_stop_sighandler(threadpool, signal_, frame):
+def server_stop_sighandler(signal, frame):
     """Function that will be called after exact signals. Stops the server"""
-    threadpool.terminate()
-    threadpool.join()
-    sys.exit()
+    global is_term_, await_
+    logging.debug("Sigint called")
+    is_term_ = True
+    if await_:
+        sys.exit(0)
 
 if __name__ == '__main__':
+
+    signal.signal(signal.SIGINT, server_stop_sighandler)
+
     AP = argparse.ArgumentParser()
 
     AP.add_argument("host", help="Host to connect/listen")
@@ -117,33 +125,21 @@ if __name__ == '__main__':
 
         if ARGS["u"]:
             logging.debug("Nice UDP!")
-            THREADPOOL = multiprocessing.Process(
-                target=run_udp_server, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
+            
+            run_udp_server(ARGS["host"], int(ARGS["port"]))
         else:
-            logging.info("Awesome TCP!")
-            THREADPOOL = multiprocessing.Process(
-                target=run_tcp_server, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
+            logging.debug("Awesome TCP!")
+            run_tcp_server(ARGS["host"], int(ARGS["port"]))
 
     else:
         logging.debug("O_o I am client!")
 
         if ARGS["u"]:
             logging.debug("Nice UDP!")
-            THREADPOOL = multiprocessing.Process(
-                target=run_udp_client, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
+            run_udp_client(ARGS["host"], int(ARGS["port"]))
         else:
             logging.debug("Awesome TCP!")
-            THREADPOOL = multiprocessing.Process(
-                target=run_tcp_client, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
+            run_tcp_client(ARGS["host"], int(ARGS["port"]))
 
 
-    # signal.signal(signal.SIGINT, server_stop_sighandler)
-    signal.signal(signal.SIGINT, partial(server_stop_sighandler, THREADPOOL))
 
-    THREADPOOL.start()
-    THREADPOOL.join(30)
-    if THREADPOOL.is_alive():
-        logging.debug("OwO mom calls to bed, see you guys(((((")
-
-        THREADPOOL.terminate()
-        THREADPOOL.join()
