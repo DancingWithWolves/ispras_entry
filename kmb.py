@@ -1,13 +1,18 @@
+"""Simple client-server module"""
+
 import socket
 import argparse
 import logging
 import sys
 import multiprocessing
+import signal
+from functools import partial
 
 MAX_BUF_SIZE = 2048
 
 
 def run_udp_server(host, port):
+    """Runs UDP server that returns host:port to any client"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     server_socket.bind((host, port))
     logging.info("Socket binded")
@@ -18,12 +23,13 @@ def run_udp_server(host, port):
         logging.info("There is a new connection with %s",
                      message.decode("utf-8"))
         server_socket.sendto(message, (cl_host, cl_port))
-        logging.info("Sended message <host:port> to %s",
+        logging.info("Sent message <host:port> to %s",
                      message.decode("utf-8"))
-        logging.info("Closed connetion with %s", message.decode("utf-8"))
+        logging.info("Closed connection with %s", message.decode("utf-8"))
 
 
 def run_tcp_server(host, port):
+    """Runs TCP server that returns host:port to any client"""
     server_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_socket.bind((host, port))
     logging.info("Socket binded")
@@ -35,13 +41,14 @@ def run_tcp_server(host, port):
         logging.info("There is a new connection with %s",
                      message.decode("utf-8"))
         connection_socket.send(message)
-        logging.info("Sended message <host:port> to %s",
+        logging.info("Sent message <host:port> to %s",
                      message.decode("utf-8"))
         connection_socket.close()
         logging.info("Closed connection with %s", message.decode("utf-8"))
 
 
 def run_udp_client(host, port):
+    """Runs UDP client that recieves 1 message from server"""
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     logging.info("Socket created")
 
@@ -56,6 +63,7 @@ def run_udp_client(host, port):
 
 
 def run_tcp_client(host, port):
+    """Runs TCP client that recieves 1 message from server"""
     client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     logging.info("Socket created")
 
@@ -66,68 +74,76 @@ def run_tcp_client(host, port):
 
     recieved_message = client_socket.recv(MAX_BUF_SIZE)
     logging.info("Recieved message %s", recieved_message.decode("utf-8"))
-    print(recieved_message)
+    print(recieved_message.decode("utf-8"))
 
     client_socket.close()
     logging.info("Connection closed")
 
 
+def server_stop_sighandler(threadpool, signal_, frame):
+    """Function that will be called after exact signals. Stops the server"""
+    threadpool.terminate()
+    threadpool.join()
+    sys.exit()
+
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser()
+    AP = argparse.ArgumentParser()
 
-    ap.add_argument("host", help="Host to connect/listen")
-    ap.add_argument("port", help="Port to connect/listen")
+    AP.add_argument("host", help="Host to connect/listen")
+    AP.add_argument("port", help="Port to connect/listen")
 
-    ap.add_argument("-s", action="store_true", help="Run as a server")
-    ap.add_argument("-t", action="store_true", required=False, help="Use TCP")
-    ap.add_argument("-u", action="store_true", required=False, help="Use UDP")
-    ap.add_argument("-o", action="store_true",
+    AP.add_argument("-s", action="store_true", help="Run as a server")
+
+    EXCLUSIVE_ARGS_PROTOCOL = AP.add_mutually_exclusive_group()
+    EXCLUSIVE_ARGS_PROTOCOL.add_argument("-t", action="store_true", required=False, help="Use TCP")
+    EXCLUSIVE_ARGS_PROTOCOL.add_argument("-u", action="store_true", required=False, help="Use UDP")
+
+
+    EXCLUSIVE_ARGS_LOGOUT = AP.add_mutually_exclusive_group()
+    EXCLUSIVE_ARGS_LOGOUT.add_argument("-o", action="store_true",
                     required=False, help="Logs to STDOUT")
-    ap.add_argument("-f", required=False, help="Logs to file given after flag")
+    EXCLUSIVE_ARGS_LOGOUT.add_argument("-f", required=False, help="Logs to file given after flag")
 
-    args = vars(ap.parse_args())
+    ARGS = vars(AP.parse_args())
 
-    if args["o"] and args["f"]:
-        sys.exit()
 
-    if args["t"] and args["u"]:
-        sys.exit()
-
-    if args["f"]:
-        logging.basicConfig(
-            filename=args["f"], encoding='utf-8', level=logging.DEBUG)
+    if ARGS["f"]:
+        logging.basicConfig(filename=ARGS["f"], level=logging.DEBUG)
     else:
-        logging.basicConfig(stream=sys.stdout,
-                            encoding='utf-8', level=logging.DEBUG)
+        logging.basicConfig(stream=sys.stdout, level=logging.DEBUG)
 
-    if args["s"]:
+    if ARGS["s"]:
         logging.debug("Wow I am server!")
 
-        if args["u"]:
+        if ARGS["u"]:
             logging.debug("Nice UDP!")
-            p = multiprocessing.Process(
-                target=run_udp_server, name="Foo", args=(args["host"], int(args["port"])))
+            THREADPOOL = multiprocessing.Process(
+                target=run_udp_server, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
         else:
             logging.info("Awesome TCP!")
-            p = multiprocessing.Process(
-                target=run_tcp_server, name="Foo", args=(args["host"], int(args["port"])))
+            THREADPOOL = multiprocessing.Process(
+                target=run_tcp_server, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
 
     else:
         logging.debug("O_o I am client!")
 
-        if args["u"]:
+        if ARGS["u"]:
             logging.debug("Nice UDP!")
-            p = multiprocessing.Process(
-                target=run_udp_client, name="Foo", args=(args["host"], int(args["port"])))
+            THREADPOOL = multiprocessing.Process(
+                target=run_udp_client, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
         else:
             logging.debug("Awesome TCP!")
-            p = multiprocessing.Process(
-                target=run_tcp_client, name="Foo", args=(args["host"], int(args["port"])))
+            THREADPOOL = multiprocessing.Process(
+                target=run_tcp_client, name="Foo", args=(ARGS["host"], int(ARGS["port"])))
 
-    p.start()
-    p.join(300)
-    if p.is_alive():
+
+    # signal.signal(signal.SIGINT, server_stop_sighandler)
+    signal.signal(signal.SIGINT, partial(server_stop_sighandler, THREADPOOL))
+
+    THREADPOOL.start()
+    THREADPOOL.join(30)
+    if THREADPOOL.is_alive():
         logging.debug("OwO mom calls to bed, see you guys(((((")
 
-        p.terminate()
-        p.join()
+        THREADPOOL.terminate()
+        THREADPOOL.join()
